@@ -1,0 +1,68 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.9.5
+    ports:
+      - "2181:2181"
+    volumes:
+      - ./data/zookeeper:/var/lib/zookeeper/data
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SYNC_LIMIT: 5
+      KAFKA_OPTS: "-Dzookeeper.4lw.commands.whitelist=*"
+    healthcheck:
+          test: ["CMD", "bash", "-lc", "echo ruok | nc -w 2 127.0.0.1 2181 | grep imok || exit 1"]
+          interval: 10s
+          timeout: 5s
+          retries: 5
+  kafka:
+    image: confluentinc/cp-kafka:7.9.5
+    hostname: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    volumes:
+      - ./data/kafka:/var/lib/kafka/data
+    restart: unless-stopped
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: CLUSTER://kafka:29092,HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: CLUSTER://kafka:29092,HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CLUSTER:PLAINTEXT,HOST:PLAINTEXT # SSL en prod
+      KAFKA_INTER_BROKER_LISTENER_NAME: CLUSTER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    healthcheck:
+          test: ["CMD", "bash", "-lc", "kafka-broker-api-versions --bootstrap-server kafka:29092 || exit 1"]
+          interval: 10s
+          timeout: 5s
+          retries: 5
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    healthcheck:
+      test: ["CMD", "wget", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# [ --- Prod --- ]
+# volumes:
+#   zookeeper-data:
+#     driver: local
+#   kafka-data:
+#     driver: local
+
+networks:
+  default:
+    name: spark-kafka-network
